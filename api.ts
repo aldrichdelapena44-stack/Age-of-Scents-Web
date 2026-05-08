@@ -1,50 +1,102 @@
-import { getToken } from "@/lib/auth";
+const API_BASE_URL =
+    process.env.NEXT_PUBLIC_API_URL || "https://largefile.onrender.com/api";
 
-export const API_BASE_URL =
-    process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:4000/api";
+export const mediaUrl = (path?: string | null) => {
+    if (!path) return "";
 
-export const API_ORIGIN = API_BASE_URL.replace(/\/api\/?$/, "");
+    if (path.startsWith("http://") || path.startsWith("https://")) {
+        return path;
+    }
 
-type RequestBody = BodyInit | Record<string, unknown> | null | undefined;
-
-type RequestOptions = Omit<RequestInit, "body"> & {
-    body?: RequestBody;
+    return `${API_BASE_URL.replace(/\/$/, "")}/${path.replace(/^\//, "")}`;
 };
 
-export function mediaUrl(path?: string) {
-    if (!path) return "";
-    if (path.startsWith("http://") || path.startsWith("https://")) return path;
-    if (path.startsWith("/")) return `${API_ORIGIN}${path}`;
-    return `${API_ORIGIN}/${path}`;
-}
+type RequestBody =
+    | Record<string, unknown>
+    | unknown[]
+    | string
+    | number
+    | boolean
+    | null
+    | FormData
+    | undefined;
 
-async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
+async function request<T>(
+    path: string,
+    options: RequestInit = {}
+): Promise<T> {
+    const token =
+        typeof window !== "undefined" ? localStorage.getItem("token") : null;
+
+    const url = `${API_BASE_URL.replace(/\/$/, "")}/${path.replace(/^\//, "")}`;
+
     const headers = new Headers(options.headers);
-    const isFormData = typeof FormData !== "undefined" && options.body instanceof FormData;
-    if (options.body && !isFormData) headers.set("Content-Type", "application/json");
-    const token = typeof window !== "undefined" ? getToken() : null;
-    if (token) headers.set("Authorization", `Bearer ${token}`);
 
-    let requestBody: BodyInit | undefined;
-    if (isFormData) requestBody = options.body as FormData;
-    else if (options.body != null) requestBody = JSON.stringify(options.body);
-    else requestBody = undefined;
+    if (!(options.body instanceof FormData)) {
+        headers.set("Content-Type", "application/json");
+    }
 
-    const response = await fetch(`${API_BASE_URL}${path}`, {
+    if (token) {
+        headers.set("Authorization", `Bearer ${token}`);
+    }
+
+    const response = await fetch(url, {
         ...options,
         headers,
-        body: requestBody,
-        cache: "no-store"
     });
 
-    const data = await response.json().catch(() => null);
-    if (!response.ok) throw new Error(data?.message || "Request failed.");
+    const text = await response.text();
+
+    let data: unknown = null;
+
+    try {
+        data = text ? JSON.parse(text) : null;
+    } catch {
+        data = text;
+    }
+
+    if (!response.ok) {
+        const errorData = data as { message?: string; error?: string };
+        throw new Error(errorData?.message || errorData?.error || "Request failed");
+    }
+
     return data as T;
 }
 
 export const api = {
-    get: <T>(path: string): Promise<T> => request<T>(path),
-    post: <T>(path: string, body?: RequestBody): Promise<T> => request<T>(path, { method: "POST", body }),
-    put: <T>(path: string, body?: RequestBody): Promise<T> => request<T>(path, { method: "PUT", body }),
-    delete: <T>(path: string): Promise<T> => request<T>(path, { method: "DELETE" })
+    get: <T>(path: string): Promise<T> => {
+        return request<T>(path, {
+            method: "GET",
+        });
+    },
+
+    post: <T>(path: string, body?: RequestBody): Promise<T> => {
+        return request<T>(path, {
+            method: "POST",
+            body:
+                body instanceof FormData
+                    ? body
+                    : body !== undefined
+                        ? JSON.stringify(body)
+                        : undefined,
+        });
+    },
+
+    put: <T>(path: string, body?: RequestBody): Promise<T> => {
+        return request<T>(path, {
+            method: "PUT",
+            body:
+                body instanceof FormData
+                    ? body
+                    : body !== undefined
+                        ? JSON.stringify(body)
+                        : undefined,
+        });
+    },
+
+    delete: <T>(path: string): Promise<T> => {
+        return request<T>(path, {
+            method: "DELETE",
+        });
+    },
 };

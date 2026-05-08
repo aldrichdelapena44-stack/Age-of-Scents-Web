@@ -2,6 +2,7 @@ import cors from "cors";
 import express from "express";
 import rateLimit from "express-rate-limit";
 import path from "path";
+
 import adminRoutes from "./routes/admin.routes";
 import contactRoutes from "./routes/contact.routes";
 import feedbackRoutes from "./routes/feedback.routes";
@@ -12,22 +13,46 @@ import productRoutes from "./routes/product.routes";
 import userRoutes from "./routes/user.routes";
 import verificationRoutes from "./routes/verification.routes";
 import webhookRoutes from "./routes/webhook.routes";
-import { env } from "./config/env";
+
 import { errorMiddleware } from "./middlewares/error.middleware";
 
 export const app = express();
 
-app.use(
-    cors({
-        origin: env.frontendUrl,
-        credentials: true
-    })
-);
+const allowedOrigins = [
+    process.env.CORS_ORIGIN,
+    process.env.FRONTEND_URL,
+    "https://largefile-iota.vercel.app",
+    "https://age-of-scent-perfume.vercel.app",
+    "http://localhost:3000",
+].filter(Boolean) as string[];
+
+const corsOptions: cors.CorsOptions = {
+    origin: (origin, callback) => {
+        if (!origin) {
+            return callback(null, true);
+        }
+
+        const isAllowedOrigin =
+            allowedOrigins.includes(origin) || origin.endsWith(".vercel.app");
+
+        if (isAllowedOrigin) {
+            return callback(null, true);
+        }
+
+        return callback(new Error(`CORS blocked for origin: ${origin}`));
+    },
+    credentials: true,
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+    optionsSuccessStatus: 204,
+};
+
+app.use(cors(corsOptions));
 
 app.use(
     rateLimit({
         windowMs: 15 * 60 * 1000,
-        limit: 200
+        limit: 200,
     })
 );
 
@@ -39,7 +64,7 @@ app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
 app.get("/api/health", (_req, res) => {
     res.json({
         success: true,
-        message: "AGE OF SCENT backend is running."
+        message: "AGE OF SCENT backend is running.",
     });
 });
 
@@ -57,7 +82,7 @@ app.use("/api/webhooks", webhookRoutes);
 app.use((_req, res) => {
     res.status(404).json({
         success: false,
-        message: "Route not found."
+        message: "Route not found.",
     });
 });
 
